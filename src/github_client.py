@@ -13,10 +13,11 @@ from .models import RepositoryDTO
 
 
 # GraphQL query to fetch repositories with star counts
+# Uses $searchQuery variable for star range slicing
 REPOS_QUERY = """
-query ($cursor: String) {
+query ($cursor: String, $searchQuery: String!) {
   search(
-    query: "stars:>=0",
+    query: $searchQuery,
     type: REPOSITORY,
     first: 100,
     after: $cursor
@@ -40,6 +41,7 @@ query ($cursor: String) {
   }
 }
 """
+
 
 
 @dataclass(frozen=True)
@@ -81,11 +83,12 @@ class GitHubClient:
             "Content-Type": "application/json",
         }
     
-    def fetch_repositories(self, cursor: Optional[str] = None) -> SearchResult:
+    def fetch_repositories(self, search_query: str, cursor: Optional[str] = None) -> SearchResult:
         """
         Fetch a page of repositories from GitHub.
         
         Args:
+            search_query: GitHub search query (e.g., "stars:100..200")
             cursor: Pagination cursor from previous request
             
         Returns:
@@ -98,7 +101,7 @@ class GitHubClient:
         
         while retries <= self._config.max_retries:
             try:
-                response = self._make_request(cursor)
+                response = self._make_request(search_query, cursor)
                 return self._parse_response(response)
                 
             except requests.exceptions.RequestException as e:
@@ -110,11 +113,11 @@ class GitHubClient:
                 print(f"[WARN] Request failed: {e}. Retrying in {backoff}s... ({retries}/{self._config.max_retries})")
                 time.sleep(backoff)
     
-    def _make_request(self, cursor: Optional[str]) -> dict:
+    def _make_request(self, search_query: str, cursor: Optional[str]) -> dict:
         """Make GraphQL request to GitHub API."""
         payload = {
             "query": REPOS_QUERY,
-            "variables": {"cursor": cursor}
+            "variables": {"cursor": cursor, "searchQuery": search_query}
         }
         
         response = requests.post(
