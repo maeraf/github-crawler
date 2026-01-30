@@ -3,7 +3,7 @@ Repository pattern for database operations.
 Provides clean abstraction over SQLAlchemy.
 """
 from datetime import datetime
-from typing import List, Sequence
+from typing import List, Sequence, Dict
 
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
@@ -41,17 +41,24 @@ class RepositoryStore:
         if not repositories:
             return 0
         
-        # Prepare values for bulk insert
+        # Deduplicate repositories within the batch by github_id
+        # We keep the last occurrence in the batch
+        unique_repos: Dict[str, RepositoryDTO] = {}
+        for repo in repositories:
+            unique_repos[repo.github_id] = repo
+        
+        # Prepare values for bulk insert using deduplicated data
+        now = datetime.utcnow()
         values = [
             {
                 "github_id": repo.github_id,
                 "owner": repo.owner,
                 "name": repo.name,
                 "star_count": repo.star_count,
-                "crawled_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "crawled_at": now,
+                "updated_at": now,
             }
-            for repo in repositories
+            for repo in unique_repos.values()
         ]
         
         # PostgreSQL upsert with ON CONFLICT
@@ -69,7 +76,7 @@ class RepositoryStore:
         self._session.execute(stmt)
         self._session.commit()
         
-        return len(repositories)
+        return len(unique_repos)
     
     def get_count(self) -> int:
         """Get total count of repositories in database."""
